@@ -1,0 +1,96 @@
+{
+  "version": "1.0",
+  "mode": "1v1",
+  "topic": {
+    "theme": "AI should replace most customer service jobs",
+    "pro_position": "AI should replace most customer service jobs",
+    "con_position": "AI should not replace most customer service jobs"
+  },
+  "config": {
+    "models": {
+      "default": {
+        "provider": "openai",
+        "model": "qwen-plus",
+        "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        "api_key": "***"
+      }
+    }
+  },
+  "agents": [
+    { "id": "pro_debater_1", "role": "debater", "side": "pro", "position": 1, "model": "qwen-plus" },
+    { "id": "con_debater_1", "role": "debater", "side": "con", "position": 1, "model": "qwen-plus" },
+    { "id": "logic_judge", "role": "judge", "side": "neutral", "position": 0, "model": "qwen-plus" },
+    { "id": "persuasion_judge", "role": "judge", "side": "neutral", "position": 0, "model": "qwen-plus" },
+    { "id": "clash_judge", "role": "judge", "side": "neutral", "position": 0, "model": "qwen-plus" },
+    { "id": "summarizer", "role": "summarizer", "side": "neutral", "position": 0, "model": "qwen-plus" }
+  ],
+  "events": [
+    {
+      "timestamp": "2026-03-16T05:00:00+00:00",
+      "phase": "SETUP",
+      "event_type": "TOPIC",
+      "agent_id": "system",
+      "side": "neutral",
+      "visibility": "PUBLIC",
+      "round_num": null,
+      "content": "Theme: AI should replace most customer service jobs\nPro: AI should replace most customer service jobs\nCon: AI should not replace most customer service jobs",
+      "metadata": {}
+    },
+    {
+      "timestamp": "2026-03-16T05:01:00+00:00",
+      "phase": "DEBATE",
+      "event_type": "SPEECH",
+      "agent_id": "pro_debater_1",
+      "side": "pro",
+      "visibility": "PUBLIC",
+      "round_num": 1,
+      "content": "AI can absorb repetitive customer service work faster, cheaper, and around the clock, freeing people to handle complex exceptions and relationship building.",
+      "metadata": { "model": "qwen-plus", "tokens_in": 320, "tokens_out": 90, "latency_ms": 1500 }
+    },
+    {
+      "timestamp": "2026-03-16T05:02:00+00:00",
+      "phase": "DEBATE",
+      "event_type": "SPEECH",
+      "agent_id": "con_debater_1",
+      "side": "con",
+      "visibility": "PUBLIC",
+      "round_num": 1,
+      "content": "Customer service is not only ticket resolution; it also handles fragile emotions, edge cases, and trust repair where human judgment matters.",
+      "metadata": { "model": "qwen-plus", "tokens_in": 360, "tokens_out": 92, "latency_ms": 1700 }
+    }
+  ],
+  "judging": {
+    "scores": [
+      {
+        "judge": "logic_judge",
+        "angle": "Logic Judge",
+        "pro_score": 74,
+        "con_score": 78,
+        "pro_analysis": "The pro side established a clean efficiency case.",
+        "con_analysis": "The con side identified hidden assumptions about service quality.",
+        "key_moments": ["The distinction between repetitive work and trust repair."],
+        "reasoning": "Con addressed the missing human edge more directly."
+      }
+    ],
+    "final": {
+      "pro_total": 74,
+      "con_total": 78,
+      "winner": "con",
+      "verdict_document": "Con wins on stronger engagement with service quality and edge cases."
+    }
+  },
+  "summary": {
+    "content": "The debate turns on whether customer service is primarily a process-optimization problem or a trust-and-judgment problem. A realistic takeaway is selective automation rather than blanket replacement.",
+    "agent_id": "summarizer",
+    "model": "qwen-plus"
+  },
+  "stats": {
+    "total_tokens": 862,
+    "total_cost_usd": 0,
+    "total_duration_seconds": 5.2,
+    "per_agent_stats": {
+      "pro_debater_1": { "calls": 1, "tokens_in": 320, "tokens_out": 90, "duration_seconds": 1.5 },
+      "con_debater_1": { "calls": 1, "tokens_in": 360, "tokens_out": 92, "duration_seconds": 1.7 }
+    }
+  }
+}

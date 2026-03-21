@@ -1,0 +1,54 @@
+@import "tailwindcss";
+
+@theme {
+  /* Colors */
+  --color-ivory: #faf9f5;
+  --color-ivory-dark: #f0efe8;
+  --color-slate: #141413;
+  --color-slate-light: #3d3d3a;
+  --color-slate-muted: #6b6b66;
+  --color-terracotta: #c6613f;
+  --color-terracotta-hover: #b5532f;
+
+  /* Side colors */
+  --color-pro: #2d6a4f;
+  --color-pro-bg: #f0f7f4;
+  --color-pro-border: #b7d7c8;
+  --color-con: #9b2226;
+  --color-con-bg: #fdf2f2;
+  --color-con-border: #e5b8b9;
+
+  /* Fonts */
+  --font-sans: "Inter", system-ui, sans-serif;
+  --font-serif: "Lora", Georgia, serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  /* Animations */
+  --animate-fade-in-up: fade-in-up 0.4s ease both;
+  --animate-fade-in: fade-in 0.3s ease both;
+}
+
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Base styles */
+body {
+  font-family: var(--font-sans);
+  background-color: var(--color-ivory);
+  color: var(--color-slate);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
