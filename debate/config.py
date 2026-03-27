@@ -10,6 +10,7 @@ from typing import Any
 import yaml
 
 from .models import ModelConfig, Role, Side
+from .research.types import ResearchConfig
 
 ENV_PATTERN = re.compile(r"\$\{([A-Z0-9_]+)\}")
 
@@ -65,10 +66,26 @@ class ModelRegistry:
 
     def export(self) -> dict[str, Any]:
         payload = deepcopy(self.payload)
-        default = payload.get("default", {})
-        if default.get("api_key"):
-            default["api_key"] = "***"
-        for override in payload.get("overrides", {}).values():
-            if isinstance(override, dict) and override.get("api_key"):
-                override["api_key"] = "***"
+        self._redact_secrets(payload)
         return payload
+
+    @classmethod
+    def _redact_secrets(cls, value: Any) -> None:
+        if isinstance(value, dict):
+            for key, item in value.items():
+                if key in {"api_key", "jina_api_key"} and item:
+                    value[key] = "***"
+                    continue
+                cls._redact_secrets(item)
+        elif isinstance(value, list):
+            for item in value:
+                cls._redact_secrets(item)
+
+    @property
+    def research_config(self) -> ResearchConfig:
+        raw = self.payload.get("research", {})
+        if not raw:
+            return ResearchConfig()
+        fields = {f.name for f in ResearchConfig.__dataclass_fields__.values()}
+        filtered = {k: v for k, v in raw.items() if k in fields}
+        return ResearchConfig(**filtered)

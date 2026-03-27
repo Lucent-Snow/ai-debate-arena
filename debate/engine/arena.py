@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import logging
+import time
 from collections.abc import Callable
 from statistics import mean
 from typing import Any
@@ -22,7 +24,10 @@ from ..models import (
     utc_now,
 )
 from ..prompts.templates import JUDGE_ANGLES, topic_splitter_prompt
+from ..research import Evidence, SearchTask, fetch_page, web_search
 from .event_log import EventLog
+
+logger = logging.getLogger(__name__)
 
 ROLE_FOCUS = {
     1: "开篇立论，建立判断框架与核心论点。",
@@ -332,103 +337,55 @@ class DebateArena:
             for idx in range(1, 5)
         ]
 
-        pro_strategy, con_strategy = await asyncio.gather(
-            pro_coach.instruct(
-                side_label="正方",
-                theme=topic.theme,
-                stance=topic.pro_position,
-                context_instruction="制定团队总策略，并给 1-4 号辩手分配重点任务。",
-                public_transcript="暂无公开辩论内容。",
-                team_context="暂无团队内部讨论。",
+        # ── Deep research PREP phase ────────────────────────────────
+        research_cfg = self.registry.research_config
+        pro_research_coach = Coach(
+            id="pro_research_coach",
+            role=self._role("coach"),
+            side=Side.PRO,
+            position=0,
+            model_config=self.registry.resolve(
+                side=Side.PRO, role=self._role("coach"), agent_id="research"
             ),
-            con_coach.instruct(
-                side_label="反方",
-                theme=topic.theme,
-                stance=topic.con_position,
-                context_instruction="制定团队总策略，并给 1-4 号辩手分配重点任务。",
-                public_transcript="暂无公开辩论内容。",
-                team_context="暂无团队内部讨论。",
+            llm_client=self.client,
+        )
+        con_research_coach = Coach(
+            id="con_research_coach",
+            role=self._role("coach"),
+            side=Side.CON,
+            position=0,
+            model_config=self.registry.resolve(
+                side=Side.CON, role=self._role("coach"), agent_id="research"
             ),
-        )
-        self._record(
-            log,
-            Phase.PREP,
-            EventType.TEAM_DISCUSSION,
-            pro_coach.id,
-            Side.PRO,
-            Visibility.TEAM,
-            None,
-            pro_strategy,
-            pro_coach,
-        )
-        self._notify(
-            observer,
-            "team_strategy_ready",
-            {"agent_id": pro_coach.id, "side": "pro", "content": pro_strategy},
-        )
-        self._record(
-            log,
-            Phase.PREP,
-            EventType.TEAM_DISCUSSION,
-            con_coach.id,
-            Side.CON,
-            Visibility.TEAM,
-            None,
-            con_strategy,
-            con_coach,
-        )
-        self._notify(
-            observer,
-            "team_strategy_ready",
-            {"agent_id": con_coach.id, "side": "con", "content": con_strategy},
+            llm_client=self.client,
         )
 
-        pro_plans = await asyncio.gather(
-            *[
-                agent.plan(theme=topic.theme, stance=topic.pro_position, mode="4v4")
-                for agent in pro_debaters
-            ]
+        (pro_strategy, pro_plans), (con_strategy, con_plans) = await asyncio.gather(
+            self._deep_research_prep(
+                coach=pro_coach,
+                research_coach=pro_research_coach,
+                debaters=pro_debaters,
+                side=Side.PRO,
+                side_label="正方",
+                topic=topic,
+                stance=topic.pro_position,
+                log=log,
+                observer=observer,
+                research_cfg=research_cfg,
+            ),
+            self._deep_research_prep(
+                coach=con_coach,
+                research_coach=con_research_coach,
+                debaters=con_debaters,
+                side=Side.CON,
+                side_label="反方",
+                topic=topic,
+                stance=topic.con_position,
+                log=log,
+                observer=observer,
+                research_cfg=research_cfg,
+            ),
         )
-        con_plans = await asyncio.gather(
-            *[
-                agent.plan(theme=topic.theme, stance=topic.con_position, mode="4v4")
-                for agent in con_debaters
-            ]
-        )
-        for agent, plan in zip(pro_debaters, pro_plans, strict=True):
-            self._record(
-                log,
-                Phase.PREP,
-                EventType.PLAN,
-                agent.id,
-                Side.PRO,
-                Visibility.PRIVATE,
-                None,
-                plan,
-                agent,
-            )
-            self._notify(
-                observer,
-                "plan_ready",
-                {"agent_id": agent.id, "side": "pro", "content": plan},
-            )
-        for agent, plan in zip(con_debaters, con_plans, strict=True):
-            self._record(
-                log,
-                Phase.PREP,
-                EventType.PLAN,
-                agent.id,
-                Side.CON,
-                Visibility.PRIVATE,
-                None,
-                plan,
-                agent,
-            )
-            self._notify(
-                observer,
-                "plan_ready",
-                {"agent_id": agent.id, "side": "con", "content": plan},
-            )
 
         for round_num in range(1, 5):
             self._notify(observer, "round_start", {"round_num": round_num, "total_rounds": 4})
@@ -599,10 +556,248 @@ class DebateArena:
             mode="4v4",
             topic=topic,
             log=log,
-            agents=[pro_coach, con_coach, *pro_debaters, *con_debaters, *judges, summary_agent],
+            agents=[
+                pro_coach, con_coach,
+                pro_research_coach, con_research_coach,
+                *pro_debaters, *con_debaters,
+                *judges, summary_agent,
+            ],
             verdict=verdict,
             summary=summary,
         )
+
+    async def _deep_research_prep(
+        self,
+        *,
+        coach: Coach,
+        research_coach: Coach,
+        debaters: list[Debater],
+        side: Side,
+        side_label: str,
+        topic: Topic,
+        stance: str,
+        log: EventLog,
+        observer: Callable[[str, dict[str, Any]], None] | None,
+        research_cfg: Any,
+    ) -> tuple[str, list[str]]:
+        """Deep research prep: framework → suggestions → research → finalize → revise."""
+        side_val = side.value
+        prep_start = time.monotonic()
+
+        # Step 1: Coach drafts framework
+        framework = await coach.draft_strategy(
+            theme=topic.theme,
+            stance=stance,
+            mode="4v4",
+            role_focus_dict=ROLE_FOCUS,
+            total_rounds=4,
+        )
+        self._record(
+            log, Phase.PREP, EventType.FRAMEWORK, coach.id, side,
+            Visibility.TEAM, None, framework, coach,
+        )
+        self._notify(observer, "framework_ready", {
+            "agent_id": coach.id, "side": side_val, "content": framework,
+        })
+
+        # Step 1b: Debaters suggest
+        suggestions = await asyncio.gather(*[
+            d.suggest(
+                coach_strategy=framework,
+                theme=topic.theme,
+                stance=stance,
+                position=d.position,
+                role_focus=ROLE_FOCUS[d.position],
+            )
+            for d in debaters
+        ])
+        for d, sug in zip(debaters, suggestions, strict=True):
+            self._record(
+                log, Phase.PREP, EventType.DEBATER_SUGGESTION, d.id, side,
+                Visibility.TEAM, None, sug, d,
+            )
+            self._notify(observer, "debater_suggestion_ready", {
+                "agent_id": d.id, "side": side_val, "content": sug,
+            })
+
+        debater_suggestions_text = "\n".join(
+            f"{d.position}号辩手：{sug}" for d, sug in zip(debaters, suggestions, strict=True)
+        )
+
+        # Step 2: Iterative research loop
+        evidence_list: list[Evidence] = []
+        seen_queries: set[str] = set()
+
+        for rnd in range(1, research_cfg.max_research_rounds + 1):
+            if time.monotonic() - prep_start >= research_cfg.total_prep_timeout:
+                logger.info("Side %s: total prep timeout reached", side_val)
+                break
+
+            evidence_text = self._format_evidence(evidence_list)
+
+            # Plan research tasks
+            try:
+                tasks_raw = await asyncio.wait_for(
+                    research_coach.plan_research(
+                        framework=framework,
+                        debater_suggestions=debater_suggestions_text,
+                        theme=topic.theme,
+                        stance=stance,
+                        existing_evidence=evidence_text,
+                    ),
+                    timeout=research_cfg.per_round_timeout,
+                )
+            except asyncio.TimeoutError:
+                logger.warning("Side %s: plan_research timeout at round %d", side_val, rnd)
+                break
+
+            new_tasks = [
+                SearchTask(query=t["query"], purpose=t.get("purpose", ""))
+                for t in tasks_raw
+                if isinstance(t, dict) and t.get("query") and t["query"] not in seen_queries
+            ]
+            if not new_tasks:
+                break
+            for t in new_tasks:
+                seen_queries.add(t.query)
+
+            # Execute searches
+            for task in new_tasks:
+                if len(evidence_list) >= research_cfg.max_total_evidence:
+                    break
+                if time.monotonic() - prep_start >= research_cfg.total_prep_timeout:
+                    break
+
+                results = await web_search(task.query, max_results=5)
+                for sr in results[:3]:
+                    if len(evidence_list) >= research_cfg.max_total_evidence:
+                        break
+
+                    page_content = await fetch_page(
+                        sr.url,
+                        jina_api_key=research_cfg.jina_api_key,
+                        max_length=research_cfg.webcontent_max_length,
+                    )
+
+                    if page_content:
+                        summary = await research_coach.extract_summary(
+                            url_content=page_content,
+                            query=task.query,
+                            theme=topic.theme,
+                            stance=stance,
+                        )
+                        # Retry with shorter content if summary too short
+                        if len(summary) < 20 and page_content:
+                            truncated = page_content[:int(len(page_content) * 0.7)]
+                            summary = await research_coach.extract_summary(
+                                url_content=truncated,
+                                query=task.query,
+                                theme=topic.theme,
+                                stance=stance,
+                            )
+                    else:
+                        summary = ""
+
+                    # Fallback to snippet
+                    if not summary or len(summary) < 10:
+                        summary = sr.snippet
+
+                    if summary and summary != "无相关内容":
+                        ev = Evidence(
+                            query=task.query,
+                            url=sr.url,
+                            title=sr.title,
+                            summary=summary,
+                            snippet=sr.snippet,
+                        )
+                        evidence_list.append(ev)
+                        self._record(
+                            log, Phase.PREP, EventType.RESEARCH, research_coach.id, side,
+                            Visibility.TEAM, None, summary, research_coach,
+                            extra_metadata={"url": sr.url, "title": sr.title, "query": task.query},
+                        )
+                        self._notify(observer, "research_ready", {
+                            "agent_id": research_coach.id, "side": side_val,
+                            "content": summary,
+                            "url": sr.url, "title": sr.title, "query": task.query,
+                        })
+
+            # Reflect: continue?
+            if rnd < research_cfg.max_research_rounds:
+                try:
+                    should_continue = await asyncio.wait_for(
+                        research_coach.reflect(
+                            framework=framework,
+                            evidence_so_far=self._format_evidence(evidence_list),
+                            theme=topic.theme,
+                            stance=stance,
+                            round_num=rnd,
+                            max_rounds=research_cfg.max_research_rounds,
+                        ),
+                        timeout=research_cfg.per_round_timeout,
+                    )
+                except asyncio.TimeoutError:
+                    break
+                if not should_continue:
+                    break
+
+        # Step 3: Finalize + revise
+        evidence_text = self._format_evidence(evidence_list)
+        prep_result = await coach.finalize_prep(
+            framework=framework,
+            evidence=evidence_text,
+            role_focus_dict=ROLE_FOCUS,
+        )
+        overall_strategy = prep_result.get("overall_strategy", framework)
+        debater_ammos = prep_result.get("debaters", [])
+
+        # Record finalized framework
+        self._record(
+            log, Phase.PREP, EventType.FRAMEWORK, coach.id, side,
+            Visibility.TEAM, None, overall_strategy, coach,
+        )
+        self._notify(observer, "prep_finalized", {
+            "agent_id": coach.id, "side": side_val, "content": overall_strategy,
+        })
+
+        # Build ammo lookup
+        ammo_by_pos: dict[int, str] = {}
+        for item in debater_ammos:
+            if isinstance(item, dict):
+                ammo_by_pos[item.get("position", 0)] = item.get("ammo", "")
+
+        # Debaters revise plans
+        plans = await asyncio.gather(*[
+            d.revise(
+                framework=overall_strategy,
+                evidence=evidence_text,
+                ammo=ammo_by_pos.get(d.position, overall_strategy),
+                theme=topic.theme,
+                stance=stance,
+                position=d.position,
+                role_focus=ROLE_FOCUS[d.position],
+            )
+            for d in debaters
+        ])
+        for d, plan in zip(debaters, plans, strict=True):
+            self._record(
+                log, Phase.PREP, EventType.PLAN, d.id, side,
+                Visibility.PRIVATE, None, plan, d,
+            )
+            self._notify(observer, "plan_ready", {
+                "agent_id": d.id, "side": side_val, "content": plan,
+            })
+
+        return overall_strategy, list(plans)
+
+    @staticmethod
+    def _format_evidence(evidence_list: list[Evidence]) -> str:
+        if not evidence_list:
+            return ""
+        parts = []
+        for i, ev in enumerate(evidence_list, 1):
+            parts.append(f"[{i}] {ev.title} ({ev.url})\n{ev.summary}")
+        return "\n\n".join(parts)
 
     async def _ensure_topic(
         self,

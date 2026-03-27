@@ -95,7 +95,7 @@ export interface Speech {
 
 export interface TeamMessage {
   id: string;
-  kind: "strategy" | "plan" | "coach_instruction";
+  kind: "strategy" | "plan" | "coach_instruction" | "framework" | "debater_suggestion" | "research";
   agent_id: string;
   side: Side;
   round_num: number | null;

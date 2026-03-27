@@ -109,3 +109,158 @@ def build_summarizer_prompt(
         "请用中文输出总结，覆盖核心分歧、双方论证地图、综合洞见、"
         "尚未解决的问题、现实启示。不要选边站。"
     )
+
+
+# ── Deep research prep prompts ──────────────────────────────────────
+
+
+def build_draft_strategy_prompt(
+    *,
+    theme: str,
+    stance: str,
+    mode: str,
+    role_focus_dict: dict[int, str],
+    total_rounds: int,
+) -> str:
+    roles = "\n".join(f"  {k}号辩手：{v}" for k, v in role_focus_dict.items())
+    return (
+        f"你是 {mode} 辩论中一方的教练。\n"
+        f"辩题：{theme}\n"
+        f"你方立场：{stance}\n"
+        f"共 {total_rounds} 轮，每轮一位辩手发言。\n"
+        f"辩手分工：\n{roles}\n\n"
+        "请输出一份论证框架草案，包含：\n"
+        "1. 核心论点（3-5条）\n"
+        "2. 预判对手可能的攻击方向\n"
+        "3. 每位辩手的重点任务\n"
+        "4. 需要搜索补充的证据方向\n"
+        "全部使用中文，不要写标题或开场白。"
+    )
+
+
+def build_debater_suggest_prompt(
+    *,
+    coach_strategy: str,
+    theme: str,
+    stance: str,
+    position: int,
+    role_focus: str,
+) -> str:
+    return (
+        f"你是辩论队的 {position} 号辩手。\n"
+        f"辩题：{theme}\n"
+        f"你方立场：{stance}\n"
+        f"你的职责：{role_focus}\n"
+        f"教练的论证框架草案：\n{coach_strategy}\n\n"
+        "请从你的角色出发，给教练提 1-2 条简短建议（每条不超过 100 字），"
+        "可以是补充论点、需要搜索的证据、或对框架的修改意见。"
+        "直接输出建议，不要写标题。"
+    )
+
+
+def build_plan_research_prompt(
+    *,
+    framework: str,
+    debater_suggestions: str,
+    theme: str,
+    stance: str,
+    existing_evidence: str,
+) -> str:
+    return (
+        "你是辩论研究助手。根据论证框架和辩手建议，规划搜索任务。\n"
+        f"辩题：{theme}\n"
+        f"立场：{stance}\n"
+        f"论证框架：\n{framework}\n"
+        f"辩手建议：\n{debater_suggestions}\n"
+        f"已有证据：\n{existing_evidence or '暂无'}\n\n"
+        "请输出 JSON，格式为 {\"tasks\": [{\"query\": \"搜索词\", \"purpose\": \"目的\"}]}。\n"
+        "搜索词应为英文或中文关键词短语，适合搜索引擎。\n"
+        "最多 5 个任务，避免与已有证据重复。只输出 JSON。"
+    )
+
+
+def build_extract_summary_prompt(
+    *,
+    url_content: str,
+    query: str,
+    theme: str,
+    stance: str,
+) -> str:
+    return (
+        "你是辩论研究助手。从网页内容中提取与辩题相关的证据。\n"
+        f"辩题：{theme}\n"
+        f"立场：{stance}\n"
+        f"搜索目的：{query}\n"
+        f"网页内容：\n{url_content}\n\n"
+        "请提取 1-2 段最相关的事实、数据或论据，用中文输出摘要（100-200字）。"
+        '如果内容不相关，输出"无相关内容"。不要编造数据。'
+    )
+
+
+def build_reflect_prompt(
+    *,
+    framework: str,
+    evidence_so_far: str,
+    theme: str,
+    stance: str,
+    round_num: int,
+    max_rounds: int,
+) -> str:
+    return (
+        "你是辩论研究助手。判断是否需要继续搜索。\n"
+        f"辩题：{theme}\n"
+        f"立场：{stance}\n"
+        f"当前研究轮次：{round_num}/{max_rounds}\n"
+        f"论证框架：\n{framework}\n"
+        f"已收集证据：\n{evidence_so_far}\n\n"
+        "请判断：已有证据是否足够支撑论证框架？是否还有明显的证据缺口？\n"
+        '输出 JSON：{"continue": true} 表示需要继续搜索，{"continue": false} 表示证据充足。\n'
+        "只输出 JSON。"
+    )
+
+
+def build_finalize_prep_prompt(
+    *,
+    framework: str,
+    evidence: str,
+    role_focus_dict: dict[int, str],
+) -> str:
+    roles = "\n".join(f"  {k}号辩手：{v}" for k, v in role_focus_dict.items())
+    return (
+        "你是辩论教练。根据论证框架和收集的证据，为每位辩手准备弹药包。\n"
+        f"论证框架：\n{framework}\n"
+        f"收集的证据：\n{evidence}\n"
+        f"辩手分工：\n{roles}\n\n"
+        "请输出 JSON，格式为：\n"
+        '{"overall_strategy": "总策略概述",'
+        ' "debaters": ['
+        '{"position": 1, "ammo": "该辩手的论点+证据+建议"},'
+        '{"position": 2, "ammo": "..."},'
+        '{"position": 3, "ammo": "..."},'
+        '{"position": 4, "ammo": "..."}'
+        "]}\n"
+        "每位辩手的 ammo 应包含具体论点、可引用的证据和发言建议。只输出 JSON。"
+    )
+
+
+def build_debater_revise_prompt(
+    *,
+    framework: str,
+    evidence: str,
+    ammo: str,
+    theme: str,
+    stance: str,
+    position: int,
+    role_focus: str,
+) -> str:
+    return (
+        f"你是辩论队的 {position} 号辩手。\n"
+        f"辩题：{theme}\n"
+        f"你方立场：{stance}\n"
+        f"你的职责：{role_focus}\n"
+        f"教练的论证框架终稿：\n{framework}\n"
+        f"收集的证据：\n{evidence}\n"
+        f"教练给你的弹药包：\n{ammo}\n\n"
+        "请根据以上材料，输出你的修订发言计划（3条简洁要点）。"
+        "不要写标题或开场白。"
+    )

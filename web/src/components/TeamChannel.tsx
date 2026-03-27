@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { TeamMessage } from "../lib/protocol";
 
 interface Props {
@@ -9,6 +9,8 @@ interface Props {
 const agentLabel: Record<string, string> = {
   pro_coach: "正方教练",
   con_coach: "反方教练",
+  pro_research_coach: "正方研究",
+  con_research_coach: "反方研究",
   pro_debater_1: "正方一辩",
   pro_debater_2: "正方二辩",
   pro_debater_3: "正方三辩",
@@ -23,6 +25,9 @@ const kindBadge: Record<TeamMessage["kind"], { label: string; cls: string }> = {
   strategy: { label: "策略", cls: "bg-terracotta/15 text-terracotta" },
   plan: { label: "计划", cls: "bg-slate-muted/15 text-slate-muted" },
   coach_instruction: { label: "指令", cls: "bg-terracotta/15 text-terracotta" },
+  framework: { label: "框架", cls: "bg-amber-100 text-amber-800" },
+  debater_suggestion: { label: "建议", cls: "bg-sky-100 text-sky-700" },
+  research: { label: "证据", cls: "bg-emerald-100 text-emerald-700" },
 };
 
 export default function TeamChannel({ side, messages }: Props) {
@@ -55,27 +60,38 @@ export default function TeamChannel({ side, messages }: Props) {
       >
         {messages.map((msg) => {
           const badge = kindBadge[msg.kind];
+          const isFramework = msg.kind === "framework";
+          const isResearch = msg.kind === "research";
           return (
-            <div
-              key={msg.id}
-              className={`rounded px-2.5 py-2 text-xs animate-fade-in ${
-                msg.kind === "strategy"
-                  ? isPro
-                    ? "bg-pro-bg border border-pro-border"
-                    : "bg-con-bg border border-con-border"
-                  : "bg-white/70 border border-ivory-dark"
-              }`}
-            >
-              <div className="flex items-center gap-1.5 mb-1">
-                <span className={`font-medium ${isPro ? "text-pro" : "text-con"}`}>
-                  {agentLabel[msg.agent_id] ?? msg.agent_id}
-                </span>
-                <span className={`px-1 py-0.5 rounded text-[10px] font-medium ${badge.cls}`}>
-                  {msg.round_num != null ? `R${msg.round_num} ${badge.label}` : badge.label}
-                </span>
-              </div>
-              <div className="text-slate leading-relaxed whitespace-pre-wrap line-clamp-[12]">
-                {msg.content}
+            <div key={msg.id}>
+              <div
+                className={`rounded px-2.5 py-2 text-xs animate-fade-in ${
+                  isFramework
+                    ? isPro
+                      ? "bg-pro-bg border-2 border-pro-border"
+                      : "bg-con-bg border-2 border-con-border"
+                    : msg.kind === "strategy"
+                      ? isPro
+                        ? "bg-pro-bg border border-pro-border"
+                        : "bg-con-bg border border-con-border"
+                      : "bg-white/70 border border-ivory-dark"
+                }`}
+              >
+                <div className="flex items-center gap-1.5 mb-1">
+                  <span className={`font-medium ${isPro ? "text-pro" : "text-con"}`}>
+                    {agentLabel[msg.agent_id] ?? msg.agent_id}
+                  </span>
+                  <span className={`px-1 py-0.5 rounded text-[10px] font-medium ${badge.cls}`}>
+                    {msg.round_num != null ? `R${msg.round_num} ${badge.label}` : badge.label}
+                  </span>
+                </div>
+                {isResearch ? (
+                  <ResearchContent content={msg.content} />
+                ) : (
+                  <div className="text-slate leading-relaxed whitespace-pre-wrap line-clamp-[12]">
+                    {msg.content}
+                  </div>
+                )}
               </div>
             </div>
           );
@@ -84,6 +100,30 @@ export default function TeamChannel({ side, messages }: Props) {
           <p className="text-center text-slate-muted text-xs py-6">等待团队消息...</p>
         )}
       </div>
+    </div>
+  );
+}
+
+function ResearchContent({ content }: { content: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const lines = content.split("\n");
+  const title = lines[0] || "证据";
+  const body = lines.slice(1).join("\n").trim();
+
+  return (
+    <div>
+      <button
+        type="button"
+        className="text-left w-full text-slate font-medium hover:underline"
+        onClick={() => setExpanded((v) => !v)}
+      >
+        {expanded ? "▾" : "▸"} {title}
+      </button>
+      {expanded && body && (
+        <div className="text-slate leading-relaxed whitespace-pre-wrap mt-1 text-[11px]">
+          {body}
+        </div>
+      )}
     </div>
   );
 }

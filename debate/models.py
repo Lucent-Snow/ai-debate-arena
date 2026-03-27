@@ -39,6 +39,9 @@ class EventType(str, Enum):
     TEAM_DISCUSSION = "TEAM_DISCUSSION"
     JUDGE_SCORE = "JUDGE_SCORE"
     SUMMARY = "SUMMARY"
+    RESEARCH = "RESEARCH"
+    DEBATER_SUGGESTION = "DEBATER_SUGGESTION"
+    FRAMEWORK = "FRAMEWORK"
 
 
 class Visibility(str, Enum):

@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-from ..prompts.templates import build_debater_prompt
+from ..prompts.templates import (
+    build_debater_prompt,
+    build_debater_revise_prompt,
+    build_debater_suggest_prompt,
+)
 from .base import BaseAgent
 
 
@@ -46,3 +50,53 @@ class Debater(BaseAgent):
         )
         user_prompt = "请给出你的本轮正式发言。"
         return (await self.generate(system_prompt=system_prompt, user_prompt=user_prompt)).content
+
+    # ── Deep research prep methods ──────────────────────────────────
+
+    async def suggest(
+        self,
+        *,
+        coach_strategy: str,
+        theme: str,
+        stance: str,
+        position: int,
+        role_focus: str,
+    ) -> str:
+        system_prompt = build_debater_suggest_prompt(
+            coach_strategy=coach_strategy,
+            theme=theme,
+            stance=stance,
+            position=position,
+            role_focus=role_focus,
+        )
+        resp = await self.generate(
+            system_prompt=system_prompt,
+            user_prompt="请给出你的建议。",
+        )
+        return resp.content
+
+    async def revise(
+        self,
+        *,
+        framework: str,
+        evidence: str,
+        ammo: str,
+        theme: str,
+        stance: str,
+        position: int,
+        role_focus: str,
+    ) -> str:
+        system_prompt = build_debater_revise_prompt(
+            framework=framework,
+            evidence=evidence,
+            ammo=ammo,
+            theme=theme,
+            stance=stance,
+            position=position,
+            role_focus=role_focus,
+        )
+        resp = await self.generate(
+            system_prompt=system_prompt,
+            user_prompt="请输出你的修订发言计划。",
+        )
+        return resp.content

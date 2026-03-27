@@ -96,21 +96,37 @@ export const useDebateStore = create<DebateState>((set) => ({
       .filter((e) =>
         e.event_type === "TEAM_DISCUSSION" ||
         e.event_type === "PLAN" ||
-        e.event_type === "COACH_INSTRUCTION"
+        e.event_type === "COACH_INSTRUCTION" ||
+        e.event_type === "FRAMEWORK" ||
+        e.event_type === "DEBATER_SUGGESTION" ||
+        e.event_type === "RESEARCH"
       )
-      .map((e, i) => ({
-        id: `hist-${i}`,
-        kind: (e.event_type === "TEAM_DISCUSSION"
-          ? "strategy"
-          : e.event_type === "PLAN"
-            ? "plan"
-            : "coach_instruction") as TeamMessage["kind"],
-        agent_id: e.agent_id,
-        side: e.side,
-        round_num: e.round_num,
-        content: e.content,
-        timestamp: new Date(e.timestamp).getTime(),
-      }));
+      .map((e, i) => {
+        let kind: TeamMessage["kind"];
+        if (e.event_type === "FRAMEWORK") kind = "framework";
+        else if (e.event_type === "DEBATER_SUGGESTION") kind = "debater_suggestion";
+        else if (e.event_type === "RESEARCH") kind = "research";
+        else if (e.event_type === "TEAM_DISCUSSION") kind = "strategy";
+        else if (e.event_type === "PLAN") kind = "plan";
+        else kind = "coach_instruction";
+
+        let content = e.content;
+        if (e.event_type === "RESEARCH" && e.metadata?.title) {
+          const title = e.metadata.title as string;
+          const url = (e.metadata.url as string) ?? "";
+          content = `📎 ${title}\n${url}\n\n${content}`;
+        }
+
+        return {
+          id: `hist-${i}`,
+          kind,
+          agent_id: e.agent_id,
+          side: e.side,
+          round_num: e.round_num,
+          content,
+          timestamp: new Date(e.timestamp).getTime(),
+        };
+      });
 
     set({
       status: "complete",

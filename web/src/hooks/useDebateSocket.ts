@@ -78,6 +78,49 @@ export function useDebateSocket() {
             content: payload.content as string,
             timestamp: Date.now(),
           });
+        } else if (event === "framework_ready") {
+          addTeamMessage({
+            id: `fw-${Date.now()}-${payload.agent_id}`,
+            kind: "framework",
+            agent_id: payload.agent_id as string,
+            side: payload.side as TeamMessage["side"],
+            round_num: null,
+            content: payload.content as string,
+            timestamp: Date.now(),
+          });
+        } else if (event === "debater_suggestion_ready") {
+          addTeamMessage({
+            id: `ds-${Date.now()}-${payload.agent_id}`,
+            kind: "debater_suggestion",
+            agent_id: payload.agent_id as string,
+            side: payload.side as TeamMessage["side"],
+            round_num: null,
+            content: payload.content as string,
+            timestamp: Date.now(),
+          });
+        } else if (event === "research_ready") {
+          const title = (payload.title as string) ?? "";
+          const url = (payload.url as string) ?? "";
+          const prefix = title ? `📎 ${title}\n${url}\n\n` : "";
+          addTeamMessage({
+            id: `rs-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            kind: "research",
+            agent_id: payload.agent_id as string,
+            side: payload.side as TeamMessage["side"],
+            round_num: null,
+            content: prefix + (payload.content as string),
+            timestamp: Date.now(),
+          });
+        } else if (event === "prep_finalized") {
+          addTeamMessage({
+            id: `pf-${Date.now()}-${payload.agent_id}`,
+            kind: "framework",
+            agent_id: payload.agent_id as string,
+            side: payload.side as TeamMessage["side"],
+            round_num: null,
+            content: payload.content as string,
+            timestamp: Date.now(),
+          });
         } else if (event === "plan_ready" && useDebateStore.getState().mode === "4v4") {
           addTeamMessage({
             id: `pl-${Date.now()}-${payload.agent_id}`,

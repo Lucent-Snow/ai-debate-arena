@@ -4,7 +4,7 @@ default:
   base_url: ${AI_DEBATE_BASE_URL}
   api_key: ${AI_DEBATE_API_KEY}
   temperature: 0.4
-  max_tokens: 800
+  max_tokens: 2000
   timeout_seconds: 120
   retry_count: 2
 
@@ -14,4 +14,18 @@ overrides:
     max_tokens: 600
   summarizer:
     temperature: 0.2
-    max_tokens: 900
+    max_tokens: 1500
+  research:
+    model: qwen-turbo
+    temperature: 0.3
+    max_tokens: 2000
+  debater:
+    max_tokens: 800
+
+research:
+  jina_api_key: ${JINA_API_KEY}
+  max_research_rounds: 3
+  max_total_evidence: 20
+  webcontent_max_length: 15000
+  per_round_timeout: 120
+  total_prep_timeout: 300
