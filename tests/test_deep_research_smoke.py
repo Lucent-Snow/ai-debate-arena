@@ -30,11 +30,13 @@ async def fake_chat(*, config, messages, response_format=None):
     user_msg = messages[-1].content if messages else ""
     sys_msg = messages[0].content if messages else ""
 
-    # Route by prompt content
-    if "论证框架草案" in user_msg:
-        return make_response("核心论点：1.效率 2.成本 3.规模\n预判对手：情感牌\n证据方向：行业数据")
-    if "建议" in user_msg:
-        return make_response("建议补充医疗行业案例")
+    # Route by prompt content — new flow
+    if "初步战略方向" in user_msg:
+        return make_response("核心争点：AI效率vs人类温度。推荐风格：事实型+进攻型。核心论点：1.效率 2.成本 3.规模")
+    if "论证草稿" in user_msg:
+        return make_response("我的核心论点：AI客服解决率92%，远超人工。论证方式：数据对比。应对情感攻击：效率本身就是服务质量")
+    if "统一论证框架" in user_msg:
+        return make_response("统一框架：效率+成本双线论证，事实型+进攻型。1辩开篇立论，2辩补数据，3辩攻对方情感牌漏洞，4辩总结综合优势")
     if "搜索任务" in user_msg:
         return make_response(json.dumps({
             "tasks": [{"query": "AI customer service statistics", "purpose": "数据支撑"}]
@@ -45,15 +47,15 @@ async def fake_chat(*, config, messages, response_format=None):
         return make_response(json.dumps({"continue": False}))
     if "弹药包" in user_msg:
         return make_response(json.dumps({
-            "overall_strategy": "效率+成本双线论证",
+            "overall_strategy": "效率+成本双线论证，事实型+进攻型",
             "debaters": [
-                {"position": 1, "ammo": "开篇立论：效率数据"},
-                {"position": 2, "ammo": "补充：成本分析"},
+                {"position": 1, "ammo": "开篇立论：效率数据+判断框架"},
+                {"position": 2, "ammo": "补充：成本分析+行业案例"},
                 {"position": 3, "ammo": "反驳：情感论证的局限"},
-                {"position": 4, "ammo": "总结：综合优势"},
+                {"position": 4, "ammo": "总结：综合优势+价值收束"},
             ]
         }))
-    if "修订发言计划" in user_msg:
+    if "发言计划" in user_msg:
         return make_response("1.引用效率数据 2.回应情感质疑 3.强调人机协同")
     if "战术指令" in user_msg:
         return make_response("集中攻击对方数据薄弱环节")
@@ -64,6 +66,12 @@ async def fake_chat(*, config, messages, response_format=None):
             "pro_score": 7.5, "con_score": 7.0,
             "pro_analysis": "论证有力", "con_analysis": "反驳不足",
             "key_moments": ["效率数据"], "reasoning": "正方数据更充分"
+        }))
+    if "评分" in user_msg:
+        return make_response(json.dumps({
+            "pro_score": 7.0, "con_score": 6.5,
+            "pro_analysis": "本轮正方论证清晰", "con_analysis": "反方回应不够精准",
+            "key_moments": ["定义争夺"], "reasoning": "正方本轮占优"
         }))
     if "总结" in sys_msg:
         return make_response("双方围绕AI客服展开了激烈辩论...")

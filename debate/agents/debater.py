@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from ..prompts.templates import (
+    build_debater_draft_prompt,
     build_debater_prompt,
     build_debater_revise_prompt,
-    build_debater_suggest_prompt,
 )
 from .base import BaseAgent
 
@@ -53,25 +53,26 @@ class Debater(BaseAgent):
 
     # ── Deep research prep methods ──────────────────────────────────
 
-    async def suggest(
+    async def draft(
         self,
         *,
-        coach_strategy: str,
         theme: str,
         stance: str,
         position: int,
         role_focus: str,
+        coach_direction: str,
     ) -> str:
-        system_prompt = build_debater_suggest_prompt(
-            coach_strategy=coach_strategy,
+        """辩手基于教练方向，写出自己的论证草稿。"""
+        system_prompt = build_debater_draft_prompt(
             theme=theme,
             stance=stance,
             position=position,
             role_focus=role_focus,
+            coach_direction=coach_direction,
         )
         resp = await self.generate(
             system_prompt=system_prompt,
-            user_prompt="请给出你的建议。",
+            user_prompt="请写出你的论证草稿。",
         )
         return resp.content
 

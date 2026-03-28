@@ -4,7 +4,9 @@ import json
 import logging
 
 from ..prompts.templates import (
+    COACH_FOUNDATION,
     build_coach_prompt,
+    build_coach_synthesize_prompt,
     build_draft_strategy_prompt,
     build_extract_summary_prompt,
     build_finalize_prep_prompt,
@@ -63,7 +65,28 @@ class Coach(BaseAgent):
         )
         resp = await self.generate(
             system_prompt=system_prompt,
-            user_prompt="请输出论证框架草案。",
+            user_prompt="请输出你的初步战略方向。",
+        )
+        return resp.content
+
+    async def synthesize(
+        self,
+        *,
+        theme: str,
+        stance: str,
+        coach_direction: str,
+        debater_drafts: str,
+    ) -> str:
+        """综合教练方向 + 四份辩手草稿 → 统一论证框架。"""
+        system_prompt = build_coach_synthesize_prompt(
+            theme=theme,
+            stance=stance,
+            coach_direction=coach_direction,
+            debater_drafts=debater_drafts,
+        )
+        resp = await self.generate(
+            system_prompt=system_prompt,
+            user_prompt="请综合所有草稿，输出统一论证框架。",
         )
         return resp.content
 

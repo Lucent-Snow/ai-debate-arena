@@ -387,6 +387,8 @@ class DebateArena:
             ),
         )
 
+        # ── Debate rounds with per-round judging ──────────────────
+        all_round_scores: list[dict] = []
         for round_num in range(1, 5):
             self._notify(observer, "round_start", {"round_num": round_num, "total_rounds": 4})
             pro_agent = pro_debaters[round_num - 1]
@@ -522,7 +524,97 @@ class DebateArena:
                 },
             )
 
-        judges, verdict = await self._judge(topic=topic, log=log)
+            # ── Per-round judging ─────────────────────────────────
+            transcript_so_far = log.transcript(public_only=True)
+            round_judges: list[Judge] = []
+            for agent_id in JUDGE_ANGLES:
+                judge = Judge(
+                    id=agent_id,
+                    role=self._role("judge"),
+                    side=Side.NEUTRAL,
+                    position=0,
+                    model_config=self.registry.resolve(
+                        role=self._role("judge"), agent_id=agent_id
+                    ),
+                    llm_client=self.client,
+                )
+                round_judges.append(judge)
+            round_scores = await asyncio.gather(*[
+                j.score_round(
+                    angle_name=JUDGE_ANGLES[j.id][0],
+                    angle_description=JUDGE_ANGLES[j.id][1],
+                    theme=topic.theme,
+                    pro_position=topic.pro_position,
+                    con_position=topic.con_position,
+                    round_num=round_num,
+                    total_rounds=4,
+                    pro_speech=pro_speech,
+                    con_speech=con_speech,
+                    transcript_so_far=transcript_so_far,
+                )
+                for j in round_judges
+            ])
+            for judge, score in zip(round_judges, round_scores, strict=True):
+                all_round_scores.append({
+                    "round": round_num,
+                    "judge": judge.id,
+                    "pro_score": score.pro_score,
+                    "con_score": score.con_score,
+                    "reasoning": score.reasoning,
+                })
+                self._record(
+                    log, Phase.JUDGE, EventType.JUDGE_SCORE, judge.id, Side.NEUTRAL,
+                    Visibility.PUBLIC, round_num, score.reasoning, judge,
+                    extra_metadata=score.to_dict(),
+                )
+            self._notify(observer, "round_judged", {
+                "round_num": round_num,
+                "scores": [s.to_dict() for s in round_scores],
+            })
+
+        # ── Final judging: accumulate + deep analysis ─────────────
+        final_judges: list[Judge] = []
+        for agent_id in JUDGE_ANGLES:
+            judge = Judge(
+                id=agent_id,
+                role=self._role("judge"),
+                side=Side.NEUTRAL,
+                position=0,
+                model_config=self.registry.resolve(
+                    role=self._role("judge"), agent_id=agent_id
+                ),
+                llm_client=self.client,
+            )
+            final_judges.append(judge)
+        final_scores = await asyncio.gather(*[
+            j.score_final(
+                angle_name=JUDGE_ANGLES[j.id][0],
+                angle_description=JUDGE_ANGLES[j.id][1],
+                theme=topic.theme,
+                pro_position=topic.pro_position,
+                con_position=topic.con_position,
+                transcript=log.transcript(public_only=True),
+                round_scores=[s for s in all_round_scores if s["judge"] == j.id],
+            )
+            for j in final_judges
+        ])
+        pro_total = mean(s.pro_score for s in final_scores)
+        con_total = mean(s.con_score for s in final_scores)
+        winner = "pro" if pro_total >= con_total else "con"
+        verdict_document = "\n\n".join(
+            f"{s.angle}: Pro {s.pro_score:.1f} / Con {s.con_score:.1f}\n{s.reasoning}"
+            for s in final_scores
+        )
+        verdict = {
+            "round_scores": all_round_scores,
+            "final_scores": [s.to_dict() for s in final_scores],
+            "final": Verdict(
+                pro_total=pro_total,
+                con_total=con_total,
+                winner=winner,
+                verdict_document=verdict_document,
+            ).to_dict(),
+        }
         self._notify(observer, "judging_ready", {"judging": verdict})
         summary_agent = Summarizer(
             id="summarizer",
@@ -560,7 +652,7 @@ class DebateArena:
                 pro_coach, con_coach,
                 pro_research_coach, con_research_coach,
                 *pro_debaters, *con_debaters,
-                *judges, summary_agent,
+                *final_judges, summary_agent,
             ],
             verdict=verdict,
             summary=summary,
@@ -580,17 +672,57 @@ class DebateArena:
         observer: Callable[[str, dict[str, Any]], None] | None,
         research_cfg: Any,
     ) -> tuple[str, list[str]]:
-        """Deep research prep: framework → suggestions → research → finalize → revise."""
+        """Deep research prep: direction → drafts → synthesize → research → finalize → revise."""
         side_val = side.value
         prep_start = time.monotonic()
 
-        # Step 1: Coach drafts framework
-        framework = await coach.draft_strategy(
+        # Step 1: Coach drafts initial strategic direction
+        coach_direction = await coach.draft_strategy(
             theme=topic.theme,
             stance=stance,
             mode="4v4",
             role_focus_dict=ROLE_FOCUS,
             total_rounds=4,
+        )
+        self._record(
+            log, Phase.PREP, EventType.FRAMEWORK, coach.id, side,
+            Visibility.TEAM, None, coach_direction, coach,
+        )
+        self._notify(observer, "framework_ready", {
+            "agent_id": coach.id, "side": side_val, "content": coach_direction,
+        })
+
+        # Step 1b: Debaters draft their own arguments (parallel)
+        drafts = await asyncio.gather(*[
+            d.draft(
+                theme=topic.theme,
+                stance=stance,
+                position=d.position,
+                role_focus=ROLE_FOCUS[d.position],
+                coach_direction=coach_direction,
+            )
+            for d in debaters
+        ])
+        for d, draft in zip(debaters, drafts, strict=True):
+            self._record(
+                log, Phase.PREP, EventType.DEBATER_SUGGESTION, d.id, side,
+                Visibility.TEAM, None, draft, d,
+            )
+            self._notify(observer, "debater_suggestion_ready", {
+                "agent_id": d.id, "side": side_val, "content": draft,
+            })
+
+        debater_drafts_text = "\n\n---\n\n".join(
+            f"【{d.position}号辩手草稿】\n{draft}"
+            for d, draft in zip(debaters, drafts, strict=True)
+        )
+
+        # Step 2: Coach synthesizes direction + all drafts → unified framework
+        framework = await coach.synthesize(
+            theme=topic.theme,
+            stance=stance,
+            coach_direction=coach_direction,
+            debater_drafts=debater_drafts_text,
         )
         self._record(
             log, Phase.PREP, EventType.FRAMEWORK, coach.id, side,
@@ -600,31 +732,7 @@ class DebateArena:
             "agent_id": coach.id, "side": side_val, "content": framework,
         })
 
-        # Step 1b: Debaters suggest
-        suggestions = await asyncio.gather(*[
-            d.suggest(
-                coach_strategy=framework,
-                theme=topic.theme,
-                stance=stance,
-                position=d.position,
-                role_focus=ROLE_FOCUS[d.position],
-            )
-            for d in debaters
-        ])
-        for d, sug in zip(debaters, suggestions, strict=True):
-            self._record(
-                log, Phase.PREP, EventType.DEBATER_SUGGESTION, d.id, side,
-                Visibility.TEAM, None, sug, d,
-            )
-            self._notify(observer, "debater_suggestion_ready", {
-                "agent_id": d.id, "side": side_val, "content": sug,
-            })
-
-        debater_suggestions_text = "\n".join(
-            f"{d.position}号辩手：{sug}" for d, sug in zip(debaters, suggestions, strict=True)
-        )
-
-        # Step 2: Iterative research loop
+        # Step 3: Iterative research loop (unchanged)
         evidence_list: list[Evidence] = []
         seen_queries: set[str] = set()
 
@@ -640,7 +748,7 @@ class DebateArena:
                 tasks_raw = await asyncio.wait_for(
                     research_coach.plan_research(
                         framework=framework,
-                        debater_suggestions=debater_suggestions_text,
+                        debater_suggestions=debater_drafts_text,
                         theme=topic.theme,
                         stance=stance,
                         existing_evidence=evidence_text,
@@ -741,7 +849,7 @@ class DebateArena:
                 if not should_continue:
                     break
 
-        # Step 3: Finalize + revise
+        # Step 4: Finalize + revise
         evidence_text = self._format_evidence(evidence_list)
         prep_result = await coach.finalize_prep(
             framework=framework,
